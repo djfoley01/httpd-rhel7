@@ -1,0 +1,103 @@
+kind: List
+apiVersion: v1
+items:
+
+- kind: ImageStream
+  apiVersion: v1
+  metadata:
+    name: rhel7
+  spec:
+    tags:
+    - from:
+        kind: DockerImage
+        name: registry.access.redhat.com/rhel7:latest
+      name: latest
+
+- kind: ImageStream
+  apiVersion: v1
+  metadata:
+    labels:
+      app: httpd-rhel7
+    name: httpd-rhel7
+  spec: {}
+
+- kind: BuildConfig
+  apiVersion: v1
+  metadata:
+    labels:
+      app: httpd-rhel7
+    name: httpd-rhel7
+  spec:
+    output:
+      to:
+        kind: ImageStreamTag
+        name: httpd:latest
+    source:
+      type: Git
+      git:
+        uri: https://github.com/djfoley01/httpd-rhel7.git
+    strategy:
+      dockerStrategy:
+        from:
+          kind: ImageStreamTag
+          name: rhel7:latest
+      type: Docker
+    triggers:
+    - type: ConfigChange
+    - type: ImageChange
+      imageChange: {}
+
+- kind: BuildConfig
+  apiVersion: v1
+  metadata:
+    labels:
+      app: httpd-rhel7-pipeline
+    name: httpd-rhel7-pipeline
+  spec:
+    strategy:
+      type: JenkinsPipeline
+      jenkinsPipelineStrategy:
+        jenkinsfile: |-
+          node(){
+            stage 'build'
+            openshiftBuild(buildConfig: 'httpd-rhel7', showBuildLogs: 'true')
+            stage 'deploy'
+          }
+    triggers:
+    - type: ConfigChange
+
+- kind: DeploymentConfig
+  apiVersion: v1
+  metadata:
+    labels:
+      app: httpd-rhel7
+    name: httpd-rhel7
+  spec:
+    replicas: 1
+    selector:
+      app: httpd-rhel7
+      deploymentconfig: httpd-rhel7
+    strategy:
+      resources: {}
+    template:
+      metadata:
+        labels:
+          app: httpd-rhel7
+          deploymentconfig: httpd-rhel7
+      spec:
+        containers:
+        - image: httpd-rhel7:latest
+          name: httpd-rhel7
+          ports:
+          - containerPort: 80
+            protocol: TCP
+    triggers:
+    - imageChangeParams:
+        automatic: true
+        containerNames:
+        - httpd-rhel7
+        from:
+          kind: ImageStreamTag
+          name: httpd-rhel7:latest
+      type: ImageChange
+    - type: ConfigChange
